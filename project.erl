@@ -1,6 +1,6 @@
 -module(project).
 -import(lists, [map/2, filter/2, zip/2]).
--export([test/0, solve/2, solve/3, solveConcurrent/3, getInstance/1, concurrentProcess/0, finalProcess/2]).
+-export([test/0, solve/2, solve/3, solveConcurrent/3, getInstance/1, concurrentProcess/0, finalProcess/3]).
 
 % Do not forget to include the full name and student ID of the team members.
 % ============================================
@@ -23,7 +23,6 @@
 % and its profit is 20 units.
 
 % ============================================
-% [true, true, true]	[{1, 10}, {10, 13}, {4, 2}]    10
 helpevaluate([], _, _, {Weight, Profit})  -> {Weight, Profit};
 helpevaluate([HBinary|TBinary], [{WA,PA}|B], MaxWeight, {WeightAcum, ProfitAcum}) -> 
 	if (HBinary == true) -> 
@@ -33,7 +32,7 @@ helpevaluate([HBinary|TBinary], [{WA,PA}|B], MaxWeight, {WeightAcum, ProfitAcum}
 		end;
 		true -> helpevaluate(TBinary, B, MaxWeight, {WeightAcum, ProfitAcum})
 	end.
-% [true, flase, false, true], {120, [{5, 10}, {8, 16}, ...]
+
 evaluate(Bools, {Max, List}) -> helpevaluate(Bools, List, Max, {0,0}).
 
 % Generation of random solutions
@@ -103,8 +102,6 @@ getInstance(ks10000) -> {1000000, [{120553, 122416}, {179530, 171513}, {76916, 7
 % elements {Solution, Weight, Profit}, where Solution contains the actual solution found and
 % Weight and Profit indicate the total weight and profit packed within the knapsack, respectively.
 % ============================================
-	% 		{MaxWeight,	ListaOpciones} 					//NumIteraciones
-% solve ( {12, [{5, 10}, {4, 7}, {8, 1}, {3, 5}, {7, 10}]} ,  20 )
 
 solveAux(Mask, {SolutionWeight, SolutionProfit}, 0, _) -> {Mask, SolutionWeight, SolutionProfit};
 solveAux(OriginalMask, {SolutionWeight, SolutionProfit}, N, {MaxWeight, ListOptions}) -> 
@@ -120,9 +117,6 @@ solve({MaxWeight, ListOptions}, N) ->
 	{SolutionWeight, SolutionProfit} = evaluate(RandomMask, {MaxWeight, ListOptions}), % {12, 20}, so far la mejor
 	solveAux(RandomMask, {SolutionWeight, SolutionProfit}, N, {MaxWeight, ListOptions}).
 
-% evaluate(Bools, {Max, List})
-
-
 % Concurrent solver 
 %
 % solveConcurrent/3 solves an instance by testing n different solutions on m different processes.
@@ -135,48 +129,42 @@ solve({MaxWeight, ListOptions}, N) ->
 % weight and profit packed within the knapsack, respectively.
 % ============================================
 
-
-finalProcess({Mask, SolutionWeight, SolutionProfit}, NumProcess) ->
-	io:format("PROCESO FINAL INCIADO ~n"),
+finalProcess({Mask, SolutionWeight, SolutionProfit}, NumProcess, SolveConcurrentPID) ->
 	receive  %PID es del proceso que decide cual de las N/M soluciones es mejor
 		{RecMask, RecSolutionWeight, RecSolutionProfit} -> 
 			if (RecSolutionProfit > SolutionProfit) ->
 				if NumProcess == 1 ->
-					io:format("The best solution found is ~p~n", [{RecMask, RecSolutionWeight, RecSolutionProfit}]);
-					true -> finalProcess({RecMask, RecSolutionWeight, RecSolutionProfit}, NumProcess-1)
+					SolveConcurrentPID ! {RecMask, RecSolutionWeight, RecSolutionProfit};
+					true -> finalProcess({RecMask, RecSolutionWeight, RecSolutionProfit}, NumProcess-1, SolveConcurrentPID)
 				end;
 			true -> 
 				if NumProcess == 1 -> 
-					io:format("The best solution found is ~p~n", [{Mask, SolutionWeight, SolutionProfit}]);
-					true -> finalProcess({Mask, SolutionWeight, SolutionProfit}, NumProcess-1)
+					SolveConcurrentPID ! {RecMask, RecSolutionWeight, RecSolutionProfit};
+					true -> finalProcess({Mask, SolutionWeight, SolutionProfit}, NumProcess-1, SolveConcurrentPID)
 				end
 			end
 	end.
 
 concurrentProcess() -> %Individual process
-	io:format("PROCESO INCIADO ~n"),
 	receive  %PID es del proceso que decide cual de las N/M soluciones es mejor
 		{Pid, MaxWeight, ListOptions, N} -> 
-			io:format("PROCESO Recibe ~n"),
 			{Mask, SolutionWeight, SolutionProfit} = solve({MaxWeight, ListOptions}, N),
 			Pid ! {Mask, SolutionWeight, SolutionProfit}
 	end.
 	
-helperSolveConcurrent(_, _, 0, _) -> io:format("PROCESOS CREADOS ~n");
+helperSolveConcurrent(_, _, 0, _) -> ok;
 helperSolveConcurrent({MaxWeight, ListOptions}, Iterations, NumberProcessors, PidFinal) -> 
 	PidSolveConcurrent = spawn(project, concurrentProcess, []),
-	io:format("PID Solve Concurrent ~p~n", [PidSolveConcurrent]),
 	PidSolveConcurrent ! {PidFinal, MaxWeight, ListOptions, Iterations},
 	helperSolveConcurrent({MaxWeight, ListOptions}, Iterations, NumberProcessors - 1, PidFinal).
 
 
 solveConcurrent({MaxWeight,	ListaOpciones}, Iterations, NumberProcessors) ->
-	PidFinal = spawn(project, finalProcess, [{[], 0, 0}, NumberProcessors]), %process is waiting
-	io:format("FinalPID ~p~n", [PidFinal]),
-	helperSolveConcurrent({MaxWeight, ListaOpciones}, (Iterations div NumberProcessors), NumberProcessors, PidFinal).
-
-
-%PidTic = spawn(challenge09, tictac, [tic, 10]),  % Tic process is created.
+	PidFinal = spawn(project, finalProcess, [{[], 0, 0}, NumberProcessors, self()]), %process is waiting
+	helperSolveConcurrent({MaxWeight, ListaOpciones}, (Iterations div NumberProcessors), NumberProcessors, PidFinal),
+	receive
+		{RecMask, RecSolutionWeight, RecSolutionProfit} -> {RecMask, RecSolutionWeight, RecSolutionProfit}
+	end.
 
 % === Test cases (internal use) ===
 % Use this code to test if your codes are working as expected. 
@@ -202,9 +190,9 @@ test() ->
 % this test may take some time to finish.
 solve(Name, Solutions, Processors) ->	
 	Instance = getInstance(Name),	
-	{T1, {_, _, P1}} = timer:tc(projectSolution, solve, [Instance, Solutions]),		
+	{T1, {_, _, P1}} = timer:tc(project, solve, [Instance, Solutions]),		
 	io:format("Instance: ~p.~n", [Name]),
 	io:format("Sequential approach): ~p seconds (profit = ~p).~n", [T1 / 1000000, P1]),	
-	{T2, {_, _, P2}} = timer:tc(projectSolution, solveConcurrent, [Instance, Solutions, Processors]),		
+	{T2, {_, _, P2}} = timer:tc(project, solveConcurrent, [Instance, Solutions, Processors]),		
 	io:format("Concurrent approach): ~p seconds (profit = ~p).~n", [T2 / 1000000, P2]),
 	ok.
