@@ -1,6 +1,6 @@
 -module(project).
 -import(lists, [map/2, filter/2, zip/2]).
--export([test/0, solve/2, solve/3, solveConcurrent/3, getInstance/1]).
+-export([test/0, solve/2, solve/3, solveConcurrent/3, getInstance/1, concurrentProcess/0, finalProcess/2]).
 
 % Do not forget to include the full name and student ID of the team members.
 % ============================================
@@ -33,7 +33,7 @@ helpevaluate([HBinary|TBinary], [{WA,PA}|B], MaxWeight, {WeightAcum, ProfitAcum}
 		end;
 		true -> helpevaluate(TBinary, B, MaxWeight, {WeightAcum, ProfitAcum})
 	end.
-
+% [true, flase, false, true], {120, [{5, 10}, {8, 16}, ...]
 evaluate(Bools, {Max, List}) -> helpevaluate(Bools, List, Max, {0,0}).
 
 % Generation of random solutions
@@ -108,7 +108,6 @@ getInstance(ks10000) -> {1000000, [{120553, 122416}, {179530, 171513}, {76916, 7
 
 solveAux(Mask, {SolutionWeight, SolutionProfit}, 0, _) -> {Mask, SolutionWeight, SolutionProfit};
 solveAux(OriginalMask, {SolutionWeight, SolutionProfit}, N, {MaxWeight, ListOptions}) -> 
-	%	CAMBIAR 0.5 A LO QUE RESPONDA EL PROFE
 	MutatedMask = mutate(OriginalMask, 0.1),
 	{MutatedWeightSol, MutatedProfitSol} = evaluate(MutatedMask, {MaxWeight, ListOptions}),
 	if (SolutionProfit > MutatedProfitSol) ->
@@ -141,13 +140,13 @@ finalProcess({Mask, SolutionWeight, SolutionProfit}, NumProcess) ->
 	io:format("PROCESO FINAL INCIADO ~n"),
 	receive  %PID es del proceso que decide cual de las N/M soluciones es mejor
 		{RecMask, RecSolutionWeight, RecSolutionProfit} -> 
-			if RecSolutionProfit > SolutionProfit ->
-				if NumProcess == 0 ->
+			if (RecSolutionProfit > SolutionProfit) ->
+				if NumProcess == 1 ->
 					io:format("The best solution found is ~p~n", [{RecMask, RecSolutionWeight, RecSolutionProfit}]);
 					true -> finalProcess({RecMask, RecSolutionWeight, RecSolutionProfit}, NumProcess-1)
 				end;
 			true -> 
-				if NumProcess == 0 -> 
+				if NumProcess == 1 -> 
 					io:format("The best solution found is ~p~n", [{Mask, SolutionWeight, SolutionProfit}]);
 					true -> finalProcess({Mask, SolutionWeight, SolutionProfit}, NumProcess-1)
 				end
@@ -166,13 +165,15 @@ concurrentProcess() -> %Individual process
 helperSolveConcurrent(_, _, 0, _) -> io:format("PROCESOS CREADOS ~n");
 helperSolveConcurrent({MaxWeight, ListOptions}, Iterations, NumberProcessors, PidFinal) -> 
 	PidSolveConcurrent = spawn(project, concurrentProcess, []),
+	io:format("PID Solve Concurrent ~p~n", [PidSolveConcurrent]),
 	PidSolveConcurrent ! {PidFinal, MaxWeight, ListOptions, Iterations},
 	helperSolveConcurrent({MaxWeight, ListOptions}, Iterations, NumberProcessors - 1, PidFinal).
 
 
 solveConcurrent({MaxWeight,	ListaOpciones}, Iterations, NumberProcessors) ->
 	PidFinal = spawn(project, finalProcess, [{[], 0, 0}, NumberProcessors]), %process is waiting
-	helperSolveConcurrent({MaxWeight, ListaOpciones}, (Iterations / NumberProcessors), NumberProcessors, PidFinal).
+	io:format("FinalPID ~p~n", [PidFinal]),
+	helperSolveConcurrent({MaxWeight, ListaOpciones}, (Iterations div NumberProcessors), NumberProcessors, PidFinal).
 
 
 %PidTic = spawn(challenge09, tictac, [tic, 10]),  % Tic process is created.
